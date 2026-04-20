@@ -206,7 +206,7 @@ fn test_mem_protect_mmio() {
     uc.mem_map(0x8000, 0x1000, Prot::ALL).unwrap();
     uc.mem_write(0x8000, &code).unwrap();
 
-    uc.mmio_map(
+    uc.mmio_map_rw(
         0x1000,
         0x3000,
         Some(|uc: &mut Unicorn<'_, i32>, addr, _| {

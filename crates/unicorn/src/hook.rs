@@ -6,6 +6,7 @@ use core::{cell::UnsafeCell, ffi::c_void};
 pub use unicorn_engine_sys::{self as sys, uc_context, uc_engine, uc_hook};
 
 use crate::{Unicorn, UnicornInner};
+use crate::ffi::{uc_mmio_tx, uc_tx_result};
 
 pub struct UcHook<'a, D: 'a, F: 'a> {
     pub callback: F,
@@ -18,43 +19,24 @@ impl<'a, D, F> IsUcHook<'a> for UcHook<'a, D, F> {}
 
 /// # Safety
 ///
-/// This function is unsafe because it dereferences the `user_data` pointer.
-pub extern "C" fn mmio_read_callback_proxy<D, F>(
+/// This function is unsafe because it dereferences the `opaque` pointer.
+pub unsafe extern "C" fn mmio_callback_proxy<D, F>(
     uc: *mut uc_engine,
-    offset: u64,
-    size: u32,
-    // user_data: *mut UcHook<D, F>,
-    user_data: *mut c_void,
-) -> u64
+    opaque: *mut c_void,
+    tx: *mut uc_mmio_tx,
+) -> uc_tx_result
 where
-    F: FnMut(&mut crate::Unicorn<D>, u64, usize) -> u64,
+    F: FnMut(&mut crate::Unicorn<D>, &mut uc_mmio_tx) -> uc_tx_result,
 {
-    let user_data = unsafe { &mut *user_data.cast::<UcHook<D, F>>() };
-    let mut user_data_uc = Unicorn {
-        inner: user_data.uc.upgrade().unwrap(),
-    };
-    debug_assert_eq!(uc, user_data_uc.get_handle());
-    (user_data.callback)(&mut user_data_uc, offset, size as usize)
-}
-
-/// # Safety
-///
-/// This function is unsafe because it dereferences the `user_data` pointer.
-pub unsafe extern "C" fn mmio_write_callback_proxy<D, F>(
-    uc: *mut uc_engine,
-    offset: u64,
-    size: u32,
-    value: u64,
-    user_data: *mut c_void,
-) where
-    F: FnMut(&mut crate::Unicorn<D>, u64, usize, u64),
-{
-    let user_data = unsafe { &mut *user_data.cast::<UcHook<D, F>>() };
-    let mut user_data_uc = Unicorn {
-        inner: user_data.uc.upgrade().unwrap(),
-    };
-    debug_assert_eq!(uc, user_data_uc.get_handle());
-    (user_data.callback)(&mut user_data_uc, offset, size as usize, value);
+    unsafe {
+        let user_data = &mut *opaque.cast::<UcHook<D, F>>();
+        let mut user_data_uc = Unicorn {
+            inner: user_data.uc.upgrade().unwrap(),
+        };
+        debug_assert_eq!(uc, user_data_uc.get_handle());
+        let tx_ref = &mut *tx;
+        (user_data.callback)(&mut user_data_uc, tx_ref)
+    }
 }
 
 /// # Safety

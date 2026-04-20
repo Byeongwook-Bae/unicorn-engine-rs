@@ -48,6 +48,7 @@ use core::{cell::UnsafeCell, ffi::c_void, ptr};
 #[macro_use]
 pub mod unicorn_const;
 pub use unicorn_const::*;
+pub mod ffi; // FFI bindings and types
 pub mod hook; // lets consumers call hooks
 
 #[cfg(test)]
@@ -89,8 +90,7 @@ impl Drop for Context {
 
 pub struct MmioCallbackScope<'a> {
     pub regions: Vec<(u64, u64)>,
-    pub read_callback: Option<Box<dyn hook::IsUcHook<'a> + 'a>>,
-    pub write_callback: Option<Box<dyn hook::IsUcHook<'a> + 'a>>,
+    pub callback: Option<Box<dyn hook::IsUcHook<'a> + 'a>>,
 }
 
 impl MmioCallbackScope<'_> {
@@ -416,11 +416,47 @@ impl<'a, D> Unicorn<'a, D> {
         unsafe { uc_mem_map(self.get_handle(), address, size, perms.0 as _) }.into()
     }
 
-    /// Map in am MMIO region backed by callbacks.
+    /// Map in an MMIO region backed by a callback.
     ///
     /// `address` must be aligned to 4kb or this will return `Error::ARG`.
     /// `size` must be a multiple of 4kb or this will return `Error::ARG`.
-    pub fn mmio_map<R, W>(
+    pub fn mmio_map<F>(&mut self, address: u64, size: u64, callback: F) -> Result<(), uc_error>
+    where
+        F: FnMut(&mut Unicorn<'_, D>, &mut ffi::uc_mmio_tx) -> ffi::uc_tx_result + 'a,
+    {
+        let callback_data = Box::new(hook::UcHook {
+            callback,
+            uc: Rc::downgrade(&self.inner),
+        });
+
+        let callback_ptr = Box::into_raw(callback_data);
+
+        let result = unsafe {
+            ffi::uc_mmio_map(
+                self.get_handle() as ffi::uc_handle,
+                address,
+                size.try_into().unwrap(),
+                hook::mmio_callback_proxy::<D, F> as *mut c_void,
+                callback_ptr as *mut c_void,
+            )
+        };
+
+        result.and_then(|| {
+            let callback_box = unsafe { Box::from_raw(callback_ptr) };
+            self.inner_mut().mmio_callbacks.push(MmioCallbackScope {
+                regions: vec![(address, size)],
+                callback: Some(callback_box as Box<dyn hook::IsUcHook>),
+            });
+
+            Ok(())
+        })
+    }
+
+    /// Map in an MMIO region backed by separate read/write callbacks.
+    ///
+    /// `address` must be aligned to 4kb or this will return `Error::ARG`.
+    /// `size` must be a multiple of 4kb or this will return `Error::ARG`.
+    pub fn mmio_map_rw<R, W>(
         &mut self,
         address: u64,
         size: u64,
@@ -431,89 +467,102 @@ impl<'a, D> Unicorn<'a, D> {
         R: FnMut(&mut Unicorn<'_, D>, u64, usize) -> u64 + 'a,
         W: FnMut(&mut Unicorn<'_, D>, u64, usize, u64) + 'a,
     {
-        let mut read_data = read_callback.map(|c| {
-            Box::new(hook::UcHook {
-                callback: c,
-                uc: Rc::downgrade(&self.inner),
-            })
-        });
-        let mut write_data = write_callback.map(|c| {
-            Box::new(hook::UcHook {
-                callback: c,
-                uc: Rc::downgrade(&self.inner),
-            })
-        });
-
-        let (read_cb, user_data_read) = read_data.as_mut().map_or((None, ptr::null_mut()), |d| {
-            (
-                Some(hook::mmio_read_callback_proxy::<D, R> as _),
-                core::ptr::from_mut(d.as_mut()).cast(),
-            )
-        });
-
-        let (write_cb, user_data_write) =
-            write_data.as_mut().map_or((None, ptr::null_mut()), |d| {
-                (
-                    Some(hook::mmio_write_callback_proxy::<D, W> as _),
-                    core::ptr::from_mut(d.as_mut()).cast(),
-                )
-            });
-
-        unsafe {
-            uc_mmio_map(
-                self.get_handle(),
-                address,
-                size,
-                read_cb,
-                user_data_read,
-                write_cb,
-                user_data_write,
-            )
+        // Wrapper to adapt old-style read/write callbacks to new uc_cb_mmio_t callback
+        struct MmioWrapper<'a, D, R, W> {
+            read_callback: Option<R>,
+            write_callback: Option<W>,
+            _phantom: core::marker::PhantomData<&'a D>,
         }
-        .and_then(|| {
-            let u64_size: u64 = size.try_into().unwrap();
-            let rd = read_data.map(|c| c as Box<dyn hook::IsUcHook>);
-            let wd = write_data.map(|c| c as Box<dyn hook::IsUcHook>);
-            self.inner_mut().mmio_callbacks.push(MmioCallbackScope {
-                regions: vec![(address, u64_size)],
-                read_callback: rd,
-                write_callback: wd,
-            });
 
-            Ok(())
-        })
+        impl<'a, D, R, W> MmioWrapper<'a, D, R, W>
+        where
+            R: FnMut(&mut Unicorn<'_, D>, u64, usize) -> u64,
+            W: FnMut(&mut Unicorn<'_, D>, u64, usize, u64),
+        {
+            fn handle_tx(
+                &mut self,
+                uc: &mut Unicorn<'_, D>,
+                tx: &mut ffi::uc_mmio_tx,
+            ) -> ffi::uc_tx_result {
+                if tx.is_read {
+                    if let Some(ref mut read_cb) = self.read_callback {
+                        let value = read_cb(uc, tx.addr, tx.size);
+                        unsafe {
+                            core::ptr::write(tx.data as *mut u64, value);
+                        }
+                        ffi::uc_tx_result::UC_TX_OK
+                    } else {
+                        ffi::uc_tx_result::UC_TX_ERROR
+                    }
+                } else {
+                    if let Some(ref mut write_cb) = self.write_callback {
+                        let value = unsafe { core::ptr::read(tx.data as *const u64) };
+                        write_cb(uc, tx.addr, tx.size, value);
+                        ffi::uc_tx_result::UC_TX_OK
+                    } else {
+                        ffi::uc_tx_result::UC_TX_ERROR
+                    }
+                }
+            }
+        }
+
+        let mut wrapper = MmioWrapper {
+            read_callback,
+            write_callback,
+            _phantom: core::marker::PhantomData,
+        };
+
+        self.mmio_map(address, size, move |uc, tx| wrapper.handle_tx(uc, tx))
     }
 
     /// Map in a read-only MMIO region backed by a callback.
     ///
     /// `address` must be aligned to 4kb or this will return `Error::ARG`.
     /// `size` must be a multiple of 4kb or this will return `Error::ARG`.
-    pub fn mmio_map_ro<F>(&mut self, address: u64, size: u64, callback: F) -> Result<(), uc_error>
+    pub fn mmio_map_ro<F>(
+        &mut self,
+        address: u64,
+        size: u64,
+        mut callback: F,
+    ) -> Result<(), uc_error>
     where
         F: FnMut(&mut Unicorn<D>, u64, usize) -> u64 + 'a,
     {
-        self.mmio_map(
-            address,
-            size,
-            Some(callback),
-            None::<fn(&mut Unicorn<D>, u64, usize, u64)>,
-        )
+        self.mmio_map(address, size, move |uc, tx| {
+            if tx.is_read {
+                let value = callback(uc, tx.addr, tx.size);
+                unsafe {
+                    core::ptr::write(tx.data as *mut u64, value);
+                }
+                ffi::uc_tx_result::UC_TX_OK
+            } else {
+                ffi::uc_tx_result::UC_TX_ERROR
+            }
+        })
     }
 
     /// Map in a write-only MMIO region backed by a callback.
     ///
     /// `address` must be aligned to 4kb or this will return `Error::ARG`.
     /// `size` must be a multiple of 4kb or this will return `Error::ARG`.
-    pub fn mmio_map_wo<F>(&mut self, address: u64, size: u64, callback: F) -> Result<(), uc_error>
+    pub fn mmio_map_wo<F>(
+        &mut self,
+        address: u64,
+        size: u64,
+        mut callback: F,
+    ) -> Result<(), uc_error>
     where
         F: FnMut(&mut Unicorn<D>, u64, usize, u64) + 'a,
     {
-        self.mmio_map(
-            address,
-            size,
-            None::<fn(&mut Unicorn<D>, u64, usize) -> u64>,
-            Some(callback),
-        )
+        self.mmio_map(address, size, move |uc, tx| {
+            if !tx.is_read {
+                let value = unsafe { core::ptr::read(tx.data as *const u64) };
+                callback(uc, tx.addr, tx.size, value);
+                ffi::uc_tx_result::UC_TX_OK
+            } else {
+                ffi::uc_tx_result::UC_TX_ERROR
+            }
+        })
     }
 
     /// Unmap a memory region.
@@ -1507,4 +1556,16 @@ impl<'a, D> Unicorn<'a, D> {
         }
         .into()
     }
+    pub fn interrupt(&mut self, irq: i32, set: i32) -> Result<(), uc_error> {
+        unsafe { uc_interrupt(self.get_handle(), irq, set) }.into()
+    }
+
+    pub fn emu_count(&self) -> Result<usize, uc_error> {
+        let mut count = 0;
+        unsafe {
+            count = uc_get_emu_counter(self.get_handle());
+        }
+        Ok(count as usize)
+    }
+
 }
