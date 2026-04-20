@@ -1,3 +1,4 @@
 [submodule "crates/unicorn-sys/unicorn"]
 	path = crates/unicorn-sys/unicorn
 	url = https://github.com/furiosa-ai/unicorn
+	branch = dev
