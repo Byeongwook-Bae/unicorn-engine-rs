@@ -732,6 +732,11 @@ impl<'a, D> Unicorn<'a, D> {
     }
 
     /// Read ARM64 Coprocessor register
+    // without `arch_aarch64`, the arch check below always returns early
+    #[cfg_attr(
+        not(feature = "arch_aarch64"),
+        allow(unused_variables, unreachable_code)
+    )]
     pub fn reg_read_arm64_coproc(&self, reg: &mut RegisterARM64CP) -> Result<(), uc_error> {
         let curr_arch = self.get_arch();
         match curr_arch {
@@ -751,6 +756,11 @@ impl<'a, D> Unicorn<'a, D> {
     }
 
     /// Write ARM64 Coprocessor register
+    // without `arch_aarch64`, the arch check below always returns early
+    #[cfg_attr(
+        not(feature = "arch_aarch64"),
+        allow(unused_variables, unreachable_code)
+    )]
     pub fn reg_write_arm64_coproc(&mut self, reg: &RegisterARM64CP) -> Result<(), uc_error> {
         let curr_arch = self.get_arch();
         match curr_arch {
@@ -1304,6 +1314,8 @@ impl<'a, D> Unicorn<'a, D> {
     /// Get the `i32` register value for the program counter for the specified architecture.
     ///
     /// If an architecture is not compiled in, this function will return `uc_error::ARCH`.
+    // `mode` is only read for the x86 program counter selection
+    #[cfg_attr(not(feature = "arch_x86"), allow(unused_variables))]
     const fn arch_to_pc_register(arch: Arch, mode: Mode) -> Result<i32, uc_error> {
         match arch {
             #[cfg(feature = "arch_x86")]
@@ -1561,10 +1573,7 @@ impl<'a, D> Unicorn<'a, D> {
     }
 
     pub fn emu_count(&self) -> Result<usize, uc_error> {
-        let mut count = 0;
-        unsafe {
-            count = uc_get_emu_counter(self.get_handle());
-        }
+        let count = unsafe { uc_get_emu_counter(self.get_handle()) };
         Ok(count as usize)
     }
 

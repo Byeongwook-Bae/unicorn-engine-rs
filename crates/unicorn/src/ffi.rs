@@ -151,7 +151,7 @@ pub unsafe extern "C" fn code_hook_proxy<D, F>(
 ) where
     F: FnMut(&mut crate::Unicorn<D>, u64, u32),
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn block_hook_proxy<D, F>(
 ) where
     F: FnMut(&mut crate::Unicorn<D>, u64, u32),
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn mem_hook_proxy<D, F>(
 where
     F: FnMut(&mut crate::Unicorn<D>, MemType, u64, usize, i64) -> bool,
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn intr_hook_proxy<D, F>(
 ) where
     F: FnMut(&mut crate::Unicorn<D>, u32),
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn insn_in_hook_proxy<D, F>(
 where
     F: FnMut(&mut crate::Unicorn<D>, u32, usize) -> u32,
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn insn_invalid_hook_proxy<D, F>(
 where
     F: FnMut(&mut crate::Unicorn<D>) -> bool,
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn insn_out_hook_proxy<D, F>(
 ) where
     F: FnMut(&mut crate::Unicorn<D>, u32, usize, u32),
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn insn_sys_hook_proxy<D, F>(uc: uc_handle, user_data: *mu
 where
     F: FnMut(&mut crate::Unicorn<D>),
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
@@ -280,14 +280,14 @@ pub unsafe extern "C" fn tlb_lookup_hook_proxy<D, F>(
 where
     F: FnMut(&mut crate::Unicorn<D>, u64, MemType) -> Option<TlbEntry>,
 {
-    let user_data = &mut *user_data;
+    let user_data = unsafe { &mut *user_data };
     let mut user_data_uc = Unicorn {
         inner: user_data.uc.upgrade().unwrap(),
     };
     debug_assert_eq!(uc, user_data_uc.get_handle() as uc_handle);
     let r = (user_data.callback)(&mut user_data_uc, vaddr, mem_type);
     if let Some(ref e) = r {
-        let ref_result: &mut TlbEntry = &mut *result;
+        let ref_result: &mut TlbEntry = unsafe { &mut *result };
         *ref_result = *e;
     };
     r.is_some()
