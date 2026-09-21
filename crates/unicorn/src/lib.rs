@@ -1510,6 +1510,24 @@ impl<'a, D> Unicorn<'a, D> {
         .into()
     }
 
+    /// Stop after an AArch64 instruction successfully writes mapped MMIO.
+    ///
+    /// All accesses and register writeback finish before emulation returns at
+    /// the next instruction. Disabled by default; other architectures return
+    /// `uc_error::ARG`. Call only outside emulation. Changing the option flushes
+    /// translated code. MMIO callbacks should return success without calling
+    /// `emu_stop`, which retains its immediate-interruption behavior.
+    pub fn ctl_set_mmio_write_stop(&mut self, enabled: bool) -> Result<(), uc_error> {
+        unsafe {
+            uc_ctl(
+                self.get_handle(),
+                UC_CTL_WRITE!(ControlType::MMIO_WRITE_STOP),
+                i32::from(enabled),
+            )
+        }
+        .into()
+    }
+
     pub fn ctl_remove_cache(&mut self, address: u64, end: u64) -> Result<(), uc_error> {
         unsafe {
             uc_ctl(
