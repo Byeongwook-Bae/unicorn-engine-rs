@@ -199,7 +199,7 @@ pub unsafe extern "C" fn insn_sys_hook_proxy_arm64<D, F>(
     reg: sys::RegisterARM64,
     cp_reg: *const sys::RegisterARM64CP,
     user_data: *mut UcHook<D, F>,
-) -> bool
+) -> u32
 where
     F: FnMut(&mut crate::Unicorn<D>, sys::RegisterARM64, &sys::RegisterARM64CP) -> bool,
 {
@@ -209,7 +209,7 @@ where
     };
     debug_assert_eq!(uc, user_data_uc.get_handle());
     let cp_reg = unsafe { cp_reg.as_ref() }.unwrap();
-    (user_data.callback)(&mut user_data_uc, reg, cp_reg)
+    u32::from((user_data.callback)(&mut user_data_uc, reg, cp_reg))
 }
 
 /// # Safety
