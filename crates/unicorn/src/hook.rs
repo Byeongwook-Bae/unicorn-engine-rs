@@ -5,8 +5,8 @@ use core::{cell::UnsafeCell, ffi::c_void};
 
 pub use unicorn_engine_sys::{self as sys, uc_context, uc_engine, uc_hook};
 
-use crate::{Unicorn, UnicornInner};
 use crate::ffi::{uc_mmio_tx, uc_tx_result};
+use crate::{Unicorn, UnicornInner};
 
 pub struct UcHook<'a, D: 'a, F: 'a> {
     pub callback: F,

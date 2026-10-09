@@ -3,7 +3,7 @@
 
 use crate::{Unicorn, UnicornInner};
 
-use super::unicorn_const::{uc_error, Arch, HookType, MemRegion, MemType, Mode, Query, TlbEntry};
+use super::unicorn_const::{Arch, HookType, MemRegion, MemType, Mode, Query, TlbEntry, uc_error};
 use alloc::rc::Weak;
 use core::cell::UnsafeCell;
 use core::ffi::c_void;
@@ -55,18 +55,8 @@ unsafe extern "C" {
         values: *const *mut c_void,
         count: c_int,
     ) -> uc_error;
-    pub fn uc_mem_write(
-        engine: uc_handle,
-        address: u64,
-        bytes: *const u8,
-        size: u64,
-    ) -> uc_error;
-    pub fn uc_mem_read(
-        engine: uc_handle,
-        address: u64,
-        bytes: *mut u8,
-        size: u64,
-    ) -> uc_error;
+    pub fn uc_mem_write(engine: uc_handle, address: u64, bytes: *const u8, size: u64) -> uc_error;
+    pub fn uc_mem_read(engine: uc_handle, address: u64, bytes: *mut u8, size: u64) -> uc_error;
     pub fn uc_vmem_read(
         engine: uc_handle,
         address: u64,
@@ -96,12 +86,7 @@ unsafe extern "C" {
         user_data: *mut c_void,
     ) -> uc_error;
     pub fn uc_mem_unmap(engine: uc_handle, address: u64, size: u64) -> uc_error;
-    pub fn uc_mem_protect(
-        engine: uc_handle,
-        address: u64,
-        size: u64,
-        perms: u32,
-    ) -> uc_error;
+    pub fn uc_mem_protect(engine: uc_handle, address: u64, size: u64, perms: u32) -> uc_error;
     pub fn uc_mem_regions(
         engine: uc_handle,
         regions: *const *const MemRegion,

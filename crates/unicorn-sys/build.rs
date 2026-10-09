@@ -125,7 +125,7 @@ fn build_with_cmake() {
         .define("UNICORN_ARCH", archs)
         .build();
 
-        // .define("BUILD_SHARED_LIBS", "OFF")
+    // .define("BUILD_SHARED_LIBS", "OFF")
     println!(
         "cargo:rustc-link-search=native={}",
         dst.join("lib").display()

@@ -1594,5 +1594,4 @@ impl<'a, D> Unicorn<'a, D> {
         let count = unsafe { uc_get_emu_counter(self.get_handle()) };
         Ok(count as usize)
     }
-
 }
