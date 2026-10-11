@@ -21,6 +21,16 @@ pub struct uc_mmio_tx {
     pub cpuid: u32,
 }
 
+/// Architectural AArch64 state used by a GIC CPU interface.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct uc_arm64_gic_context {
+    pub scr_el3: u64,
+    pub hcr_el2: u64,
+    pub el: u32,
+    pub secure: bool,
+}
+
 #[repr(C)]
 pub enum uc_tx_result {
     UC_TX_OK = 0,
@@ -117,6 +127,11 @@ unsafe extern "C" {
     pub fn uc_context_restore(engine: uc_handle, context: uc_context) -> uc_error;
     pub fn uc_ctl(engine: uc_handle, control: u32, ...) -> uc_error;
     pub fn uc_interrupt(engine: uc_handle, irq: c_int, set: c_int) -> uc_error;
+    pub fn uc_arm64_get_gic_context(
+        engine: uc_handle,
+        context: *mut uc_arm64_gic_context,
+    ) -> uc_error;
+    pub fn uc_invalidate_tb_phys_range(engine: uc_handle, start: u64, end: u64) -> uc_error;
 }
 
 pub struct UcHook<'a, D: 'a, F: 'a> {
